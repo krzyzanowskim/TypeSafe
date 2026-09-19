@@ -17,5 +17,6 @@ let package = Package(
     targets: [
         .target(name: "TypeSafe"),
         .testTarget(name: "TypeSafeTests", dependencies: ["TypeSafe"]),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )
