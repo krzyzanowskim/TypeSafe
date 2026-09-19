@@ -15,7 +15,7 @@ struct ConfigurationTests {
             Configuration(apiKey: "from-code"),
             environment: [Env.apiKey: "from-env"]
         )
-        #expect(client.apiKey == "from-code")
+        #expect(client.session.apiKey == "from-code")
     }
 
     @Test func envAPIKeyUsedWhenCodeOmits() throws {
@@ -23,7 +23,7 @@ struct ConfigurationTests {
             Configuration(),
             environment: [Env.apiKey: "  env-key  "]
         )
-        #expect(client.apiKey == "env-key")
+        #expect(client.session.apiKey == "env-key")
     }
 
     @Test func blankEnvIsIgnored() throws {

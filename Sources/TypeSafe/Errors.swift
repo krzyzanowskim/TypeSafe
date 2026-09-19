@@ -57,7 +57,7 @@ public struct APIError: Error, Sendable, LocalizedError {
         self.retryAfter = retryAfter
     }
 
-    public static func message(status: Int, body: JSONValue?) -> String {
+    static func message(status: Int, body: JSONValue?) -> String {
         if let body, let extracted = extractMessage(from: body), !extracted.isEmpty {
             return "\(status) \(extracted)"
         }
@@ -150,9 +150,7 @@ public struct TimeoutError: Error, Sendable, LocalizedError {
 
     public init(timeout: Duration) {
         self.timeout = timeout
-        let (seconds, attoseconds) = timeout.components
-        let milliseconds = seconds * 1000 + attoseconds / 1_000_000_000_000_000
-        self.message = "Request timed out after \(milliseconds)ms."
+        self.message = "Request timed out after \(formatMilliseconds(timeout))."
     }
 }
 
@@ -166,4 +164,10 @@ public struct ConnectionError: Error, Sendable, LocalizedError {
         self.message = message
         self.underlying = underlying
     }
+}
+
+func formatMilliseconds(_ duration: Duration) -> String {
+    let (seconds, attoseconds) = duration.components
+    let milliseconds = seconds * 1000 + attoseconds / 1_000_000_000_000_000
+    return "\(milliseconds)ms"
 }

@@ -11,12 +11,12 @@ struct ErrorTests {
 
     @Test func apiErrorPrefersErrorString() {
         let body: JSONValue = ["error": "nope"]
-        #expect(APIError.message(status: 400, body: body) == "400 nope")
+        #expect(APIError(status: 400, body: body).message == "400 nope")
     }
 
     @Test func apiErrorPrefersErrorMessageObject() {
         let body: JSONValue = ["error": ["message": "bad key"]]
-        #expect(APIError.message(status: 401, body: body) == "401 bad key")
+        #expect(APIError(status: 401, body: body).message == "401 bad key")
     }
 
     @Test func apiErrorUsesDetailArray() {
@@ -26,16 +26,16 @@ struct ErrorTests {
                 ["loc": ["body", "model"], "msg": "missing"],
             ]
         ]
-        #expect(APIError.message(status: 422, body: body) == "422 questions: required; model: missing")
+        #expect(APIError(status: 422, body: body).message == "422 questions: required; model: missing")
     }
 
     @Test func apiErrorEmptyBody() {
-        #expect(APIError.message(status: 500, body: nil) == "500 status code (no body)")
+        #expect(APIError(status: 500, body: nil).message == "500 status code (no body)")
     }
 
     @Test func apiErrorTruncatesRawBody() {
         let raw = String(repeating: "a", count: 250)
-        let message = APIError.message(status: 418, body: .string(raw))
+        let message = APIError(status: 418, body: .string(raw)).message
         #expect(message == "418 " + String(repeating: "a", count: 200) + "…")
     }
 

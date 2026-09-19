@@ -117,20 +117,12 @@ struct APISession: Sendable {
         request.httpBody = body
         request.timeoutInterval = timeInterval(from: timeout)
 
-        var sdkHeaders: [String: String?] = defaultSDKHeaders(apiKey: apiKey, retryCount: retryCount)
-            .mapValues { Optional($0) }
-        // defaultSDKHeaders omits this key when retryCount is nil; a trailing nil still strips a user value.
-        if retryCount == nil {
-            sdkHeaders["X-TypeSafe-Retry-Count"] = nil
-        }
-        if method == "POST", body != nil {
-            sdkHeaders["Content-Type"] = "application/json"
-        }
-
         let headers = mergeHeaders([
             defaultHeaders.mapValues { Optional($0) },
             options.headers.mapValues { Optional($0) },
-            sdkHeaders,
+            ["X-TypeSafe-Retry-Count": nil],
+            defaultSDKHeaders(apiKey: apiKey, retryCount: retryCount).mapValues { Optional($0) },
+            method == "POST" && body != nil ? ["Content-Type": Optional("application/json")] : [:],
         ])
         for (name, value) in headers {
             request.setValue(value, forHTTPHeaderField: name)
@@ -220,10 +212,7 @@ private func mapTransportError(_ error: Error, timeout: Duration) -> Error {
     if error is CancellationError || isCancelled(error) || Task.isCancelled {
         return CancellationError()
     }
-    if error is TimeoutError {
-        return error
-    }
-    if error is ConnectionError {
+    if error is TimeoutError || error is ConnectionError {
         return error
     }
     if isTimedOut(error) {
@@ -268,12 +257,6 @@ private func jsonObjectDescription(_ object: Any) -> String {
         return String(describing: object)
     }
     return string
-}
-
-private func formatMilliseconds(_ duration: Duration) -> String {
-    let (seconds, attoseconds) = duration.components
-    let milliseconds = seconds * 1000 + attoseconds / 1_000_000_000_000_000
-    return "\(milliseconds)ms"
 }
 
 private func isTimedOut(_ error: Error) -> Bool {

@@ -9,13 +9,7 @@ public struct TypeSafeClient: Sendable {
 
     public var models: Models { Models(session: session) }
 
-    let apiKey: String
-    let logger: any TypeSafeLogger
-    let defaultHeaders: [String: String]
-    let transport: any HTTPTransport
     let session: APISession
-    let random: @Sendable () -> Double
-    let sleep: @Sendable (Duration) async throws -> Void
 
     public init(_ configuration: Configuration = Configuration()) throws {
         try self.init(configuration, environment: ProcessInfo.processInfo.environment)
@@ -24,14 +18,12 @@ public struct TypeSafeClient: Sendable {
     init(
         _ configuration: Configuration,
         environment: [String: String],
-        transport: (any HTTPTransport)? = nil,
         random: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) throws {
         guard let apiKey = configuration.apiKey ?? readEnv(Env.apiKey, from: environment) else {
             throw TypeSafeError.missingAPIKey
         }
-        self.apiKey = apiKey
 
         self.baseURL = resolveBaseURL(configuration.baseURL, environment: environment)
         self.defaultModel =
@@ -47,19 +39,14 @@ public struct TypeSafeClient: Sendable {
         self.timeout = timeout
 
         self.retry = try apply(configuration.retry, to: .default)
-        self.logger = withLevel(configuration.logger ?? StderrLogger(), level: logLevel)
-        self.defaultHeaders = configuration.defaultHeaders
-        self.transport = configuration.transport ?? transport ?? URLSessionTransport()
-        self.random = random
-        self.sleep = sleep
         self.session = APISession(
             baseURL: baseURL,
             apiKey: apiKey,
-            defaultHeaders: defaultHeaders,
+            defaultHeaders: configuration.defaultHeaders,
             timeout: timeout,
-            retry: self.retry,
-            transport: self.transport,
-            logger: self.logger,
+            retry: retry,
+            transport: configuration.transport ?? URLSessionTransport(),
+            logger: withLevel(configuration.logger ?? StderrLogger(), level: logLevel),
             random: random,
             sleep: sleep
         )
@@ -106,16 +93,13 @@ private func requireNonEmptyQuestions(_ questions: some Encodable, encoder: JSON
 }
 
 private func resolveBaseURL(_ configured: URL?, environment: [String: String]) -> URL {
-    let fallback = URL(string: "https://api.typesafe.ai")!
-    let url: URL
     if let configured {
-        url = configured
-    } else if let raw = readEnv(Env.baseURL, from: environment), let parsed = URL(string: raw) {
-        url = parsed
-    } else {
-        url = fallback
+        return strippingTrailingSlashes(configured)
     }
-    return strippingTrailingSlashes(url)
+    if let raw = readEnv(Env.baseURL, from: environment), let parsed = URL(string: raw) {
+        return strippingTrailingSlashes(parsed)
+    }
+    return URL(string: "https://api.typesafe.ai")!
 }
 
 private func resolveLogLevel(_ configured: LogLevel?, environment: [String: String]) throws -> LogLevel {

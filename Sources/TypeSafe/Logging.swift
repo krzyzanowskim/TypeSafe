@@ -70,7 +70,6 @@ private struct FilteredLogger: TypeSafeLogger {
 }
 
 extension LogLevel {
-    /// Higher numbers are more severe; `off` is above every emit-able level.
     var rank: Int {
         switch self {
         case .debug: 0
@@ -82,8 +81,6 @@ extension LogLevel {
     }
 }
 
-/// Masks a secret, keeping the last four characters of values longer than eight.
-/// When the value contains a space, the scheme prefix (e.g. `"Bearer "`) is preserved.
 private func redactSecret(_ value: String) -> String {
     if let space = value.firstIndex(of: " ") {
         let scheme = value[...space]
