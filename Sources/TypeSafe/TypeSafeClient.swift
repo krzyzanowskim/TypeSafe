@@ -7,6 +7,8 @@ public struct TypeSafeClient: Sendable {
     public let retry: RetryPolicy
     public let timeout: Duration
 
+    public var models: Models { Models(session: session) }
+
     let apiKey: String
     let logger: any TypeSafeLogger
     let defaultHeaders: [String: String]
