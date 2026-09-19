@@ -49,10 +49,7 @@ struct StderrLogger: TypeSafeLogger {
     func error(_ message: String) { write(message) }
 
     private func write(_ message: String) {
-        let line = "[typesafe-sdk] \(message)\n"
-        if let data = line.data(using: .utf8) {
-            FileHandle.standardError.write(data)
-        }
+        try? FileHandle.standardError.write(contentsOf: Data("[typesafe-sdk] \(message)\n".utf8))
     }
 }
 

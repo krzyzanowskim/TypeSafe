@@ -8,13 +8,9 @@ public protocol ChoiceLabel: Hashable, Sendable {
 }
 
 extension String: ChoiceLabel {
-    // Empty conformance is ambiguous: String has many String-taking inits and is not RawRepresentable.
     public init?(rawValue: String) { self = rawValue }
     public var rawValue: String { self }
 }
-
-// String-backed enums already witness the requirements via RawRepresentable.
-extension ChoiceLabel where Self: RawRepresentable, RawValue == String {}
 
 public struct Noul: Encodable, Sendable {
     public var instructions: JSONValue?

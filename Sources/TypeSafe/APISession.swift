@@ -20,6 +20,9 @@ struct APISession: Sendable {
     ) async throws -> (Data, HTTPURLResponse) {
         let policy = try apply(options.retry, to: retry)
         let timeout = options.timeout ?? self.timeout
+        guard timeout > .zero else {
+            throw TypeSafeError(message: "timeout must be a positive duration.")
+        }
         let tag = "#\(requestCounter.next()) \(method) \(path)"
 
         var attempt = 0
@@ -214,8 +217,14 @@ private func timeInterval(from duration: Duration) -> TimeInterval {
 }
 
 private func mapTransportError(_ error: Error, timeout: Duration) -> Error {
-    if error is CancellationError || Task.isCancelled {
+    if error is CancellationError || isCancelled(error) || Task.isCancelled {
         return CancellationError()
+    }
+    if error is TimeoutError {
+        return error
+    }
+    if error is ConnectionError {
+        return error
     }
     if isTimedOut(error) {
         return TimeoutError(timeout: timeout)
@@ -268,10 +277,18 @@ private func formatMilliseconds(_ duration: Duration) -> String {
 }
 
 private func isTimedOut(_ error: Error) -> Bool {
-    if let urlError = error as? URLError, urlError.code == .timedOut {
+    urlError(error, matches: .timedOut)
+}
+
+private func isCancelled(_ error: Error) -> Bool {
+    urlError(error, matches: .cancelled)
+}
+
+private func urlError(_ error: Error, matches code: URLError.Code) -> Bool {
+    if let urlError = error as? URLError, urlError.code == code {
         return true
     }
-    // URLError bridges to NSError; thrown timeouts often arrive as NSURLErrorDomain/-1001.
+    // URLError bridges to NSError; URLSession often throws NSURLErrorDomain codes.
     let nsError = error as NSError
-    return nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue
+    return nsError.domain == NSURLErrorDomain && nsError.code == code.rawValue
 }
