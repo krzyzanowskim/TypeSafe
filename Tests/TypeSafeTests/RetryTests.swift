@@ -66,6 +66,17 @@ struct RetryTests {
         #expect(delay == .milliseconds(500))
     }
 
+    @Test func oversizedRetryAfterMSFallsBackToBackoff() {
+        let delay = retryDelay(
+            attempt: 0,
+            retryAfterMS: "1e20",
+            retryAfter: nil,
+            policy: .default,
+            random: { 0 }
+        )
+        #expect(delay == .milliseconds(500))
+    }
+
     @Test func overrideReplacesSingleField() throws {
         let policy = try apply(RetryOverride(maxRetries: 0), to: .default)
         #expect(policy.maxRetries == 0)

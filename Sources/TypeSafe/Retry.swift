@@ -146,7 +146,7 @@ func retryDelay(
     retryAfterMS: String?,
     retryAfter: String?,
     policy: RetryPolicy,
-    random: () -> Double,
+    random: @Sendable () -> Double,
     now: Date = Date()
 ) -> Duration {
     if policy.respectRetryAfter,
@@ -160,7 +160,7 @@ func retryDelay(
         milliseconds(from: policy.backoffInitial) * pow(2, Double(attempt)),
         milliseconds(from: policy.backoffMax)
     )
-    return duration(milliseconds: exponential * (1 - random() * policy.backoffJitter))
+    return duration(milliseconds: exponential * (1 - random() * policy.backoffJitter)) ?? .zero
 }
 
 private func requireNonNegativeDuration(_ name: String, _ duration: Duration) throws {
@@ -169,8 +169,13 @@ private func requireNonNegativeDuration(_ name: String, _ duration: Duration) th
     }
 }
 
-private func duration(milliseconds: Double) -> Duration {
-    .milliseconds(Int64(milliseconds.rounded()))
+private func duration(milliseconds: Double) -> Duration? {
+    let rounded = milliseconds.rounded()
+    // Int64(Double) traps on non-finite values and on |x| >= 2^63; headers are untrusted.
+    guard rounded.isFinite, rounded >= 0, rounded < 0x1.0p63 else {
+        return nil
+    }
+    return .milliseconds(Int64(rounded))
 }
 
 private func milliseconds(from duration: Duration) -> Double {
