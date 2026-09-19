@@ -11,6 +11,7 @@ public struct TypeSafeClient: Sendable {
     let logger: any TypeSafeLogger
     let defaultHeaders: [String: String]
     let transport: any HTTPTransport
+    let session: APISession
     let random: @Sendable () -> Double
     let sleep: @Sendable (Duration) async throws -> Void
 
@@ -47,8 +48,54 @@ public struct TypeSafeClient: Sendable {
         self.logger = withLevel(configuration.logger ?? StderrLogger(), level: logLevel)
         self.defaultHeaders = configuration.defaultHeaders
         self.transport = configuration.transport ?? transport ?? URLSessionTransport()
+        self.session = APISession(
+            baseURL: baseURL,
+            apiKey: apiKey,
+            defaultHeaders: defaultHeaders,
+            timeout: timeout,
+            transport: self.transport
+        )
         self.random = random
         self.sleep = sleep
+    }
+
+    public func systemOne<Q: SystemOneQuestions>(
+        state: some Encodable & Sendable,
+        questions: Q,
+        model: String? = nil,
+        options: RequestOptions = RequestOptions()
+    ) async throws -> SystemOneResult<Q.Answers> {
+        let encoder = JSONEncoder()
+        try requireNonEmptyQuestions(questions, encoder: encoder)
+
+        let body = try encoder.encode(
+            SystemOneRequestBody(
+                state: state,
+                model: model ?? defaultModel,
+                questions: questions
+            )
+        )
+        let (data, _) = try await session.request(
+            method: "POST",
+            path: "/v1/systemone",
+            body: body,
+            options: options
+        )
+        return try JSONDecoder().decode(SystemOneResult<Q.Answers>.self, from: data)
+    }
+}
+
+private struct SystemOneRequestBody<State: Encodable, Questions: Encodable>: Encodable {
+    var state: State
+    var model: String
+    var questions: Questions
+}
+
+private func requireNonEmptyQuestions(_ questions: some Encodable, encoder: JSONEncoder) throws {
+    let data = try encoder.encode(questions)
+    let object = try JSONSerialization.jsonObject(with: data)
+    guard let keys = object as? [String: Any], !keys.isEmpty else {
+        throw TypeSafeError.emptyQuestions
     }
 }
 
