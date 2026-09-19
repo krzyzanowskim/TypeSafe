@@ -48,15 +48,18 @@ public struct TypeSafeClient: Sendable {
         self.logger = withLevel(configuration.logger ?? StderrLogger(), level: logLevel)
         self.defaultHeaders = configuration.defaultHeaders
         self.transport = configuration.transport ?? transport ?? URLSessionTransport()
+        self.random = random
+        self.sleep = sleep
         self.session = APISession(
             baseURL: baseURL,
             apiKey: apiKey,
             defaultHeaders: defaultHeaders,
             timeout: timeout,
-            transport: self.transport
+            retry: self.retry,
+            transport: self.transport,
+            random: random,
+            sleep: sleep
         )
-        self.random = random
-        self.sleep = sleep
     }
 
     public func systemOne<Q: SystemOneQuestions>(
