@@ -22,33 +22,41 @@ struct APISession: Sendable {
         var attempt = 0
         while true {
             let retriesLeft = policy.maxRetries - attempt
-            let (data, response) = try await send(
-                method: method,
-                path: path,
-                body: body,
-                timeout: timeout,
-                options: options,
-                retryCount: attempt == 0 ? nil : attempt
-            )
-
-            if (200..<300).contains(response.statusCode) {
-                return (data, response)
-            }
-
-            let error = makeAPIError(data: data, response: response)
-            if retriesLeft > 0, policy.httpStatuses.contains(response.statusCode) {
-                let delay = retryDelay(
-                    attempt: attempt,
-                    retryAfterMS: response.value(forHTTPHeaderField: "retry-after-ms"),
-                    retryAfter: response.value(forHTTPHeaderField: "Retry-After"),
-                    policy: policy,
-                    random: random
+            do {
+                let (data, response) = try await send(
+                    method: method,
+                    path: path,
+                    body: body,
+                    timeout: timeout,
+                    options: options,
+                    retryCount: attempt == 0 ? nil : attempt
                 )
-                try await sleep(delay)
+
+                if (200..<300).contains(response.statusCode) {
+                    return (data, response)
+                }
+
+                let error = makeAPIError(data: data, response: response)
+                if retriesLeft > 0, policy.httpStatuses.contains(response.statusCode) {
+                    try await sleepBeforeRetry(
+                        attempt: attempt,
+                        retryAfterMS: response.value(forHTTPHeaderField: "retry-after-ms"),
+                        retryAfter: response.value(forHTTPHeaderField: "Retry-After"),
+                        policy: policy
+                    )
+                    attempt += 1
+                    continue
+                }
+                throw error
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch is TimeoutError where retriesLeft > 0 && policy.retryTimeouts {
+                try await sleepBeforeRetry(attempt: attempt, policy: policy)
                 attempt += 1
-                continue
+            } catch is ConnectionError where retriesLeft > 0 && policy.retryConnectionErrors {
+                try await sleepBeforeRetry(attempt: attempt, policy: policy)
+                attempt += 1
             }
-            throw error
         }
     }
 
@@ -84,7 +92,27 @@ struct APISession: Sendable {
             request.setValue(value, forHTTPHeaderField: name)
         }
 
-        return try await transport.send(request)
+        do {
+            return try await transport.send(request)
+        } catch {
+            throw mapTransportError(error, timeout: timeout)
+        }
+    }
+
+    private func sleepBeforeRetry(
+        attempt: Int,
+        retryAfterMS: String? = nil,
+        retryAfter: String? = nil,
+        policy: RetryPolicy
+    ) async throws {
+        let delay = retryDelay(
+            attempt: attempt,
+            retryAfterMS: retryAfterMS,
+            retryAfter: retryAfter,
+            policy: policy,
+            random: random
+        )
+        try await sleep(delay)
     }
 
     private func url(for path: String) -> URL {
@@ -127,4 +155,26 @@ private func httpHeaders(from response: HTTPURLResponse) -> [String: String] {
 private func timeInterval(from duration: Duration) -> TimeInterval {
     let (seconds, attoseconds) = duration.components
     return TimeInterval(seconds) + TimeInterval(attoseconds) * 1e-18
+}
+
+private func mapTransportError(_ error: Error, timeout: Duration) -> Error {
+    if error is CancellationError || Task.isCancelled {
+        return CancellationError()
+    }
+    if isTimedOut(error) {
+        return TimeoutError(timeout: timeout)
+    }
+    return ConnectionError(
+        message: "Connection error: \(error.localizedDescription)",
+        underlying: error
+    )
+}
+
+private func isTimedOut(_ error: Error) -> Bool {
+    if let urlError = error as? URLError, urlError.code == .timedOut {
+        return true
+    }
+    // URLError bridges to NSError; thrown timeouts often arrive as NSURLErrorDomain/-1001.
+    let nsError = error as NSError
+    return nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue
 }
