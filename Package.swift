@@ -23,6 +23,10 @@ let package = Package(
             path: "Examples/Demo"
         ),
         .testTarget(name: "TypeSafeTests", dependencies: ["TypeSafe"]),
+        .testTarget(
+            name: "TypeSafeIntegrationTests",
+            dependencies: ["TypeSafe"]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
