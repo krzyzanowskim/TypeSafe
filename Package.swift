@@ -13,9 +13,15 @@ let package = Package(
     ],
     products: [
         .library(name: "TypeSafe", targets: ["TypeSafe"]),
+        .executable(name: "TypeSafeDemo", targets: ["TypeSafeDemo"]),
     ],
     targets: [
         .target(name: "TypeSafe"),
+        .executableTarget(
+            name: "TypeSafeDemo",
+            dependencies: ["TypeSafe"],
+            path: "Examples/Demo"
+        ),
         .testTarget(name: "TypeSafeTests", dependencies: ["TypeSafe"]),
     ],
     swiftLanguageModes: [.v6]

@@ -59,6 +59,7 @@ public struct TypeSafeClient: Sendable {
             timeout: timeout,
             retry: self.retry,
             transport: self.transport,
+            logger: self.logger,
             random: random,
             sleep: sleep
         )

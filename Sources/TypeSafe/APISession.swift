@@ -7,8 +7,10 @@ struct APISession: Sendable {
     let timeout: Duration
     let retry: RetryPolicy
     let transport: any HTTPTransport
+    let logger: any TypeSafeLogger
     let random: @Sendable () -> Double
     let sleep: @Sendable (Duration) async throws -> Void
+    private let requestCounter = RequestCounter()
 
     func request(
         method: String,
@@ -18,10 +20,12 @@ struct APISession: Sendable {
     ) async throws -> (Data, HTTPURLResponse) {
         let policy = try apply(options.retry, to: retry)
         let timeout = options.timeout ?? self.timeout
+        let tag = "#\(requestCounter.next()) \(method) \(path)"
 
         var attempt = 0
         while true {
             let retriesLeft = policy.maxRetries - attempt
+            let started = ContinuousClock.now
             do {
                 let (data, response) = try await send(
                     method: method,
@@ -29,33 +33,69 @@ struct APISession: Sendable {
                     body: body,
                     timeout: timeout,
                     options: options,
-                    retryCount: attempt == 0 ? nil : attempt
+                    retryCount: attempt == 0 ? nil : attempt,
+                    tag: tag
                 )
+                let elapsed = started.duration(to: .now)
+                let requestID = response.value(forHTTPHeaderField: "x-typesafe-request-id")
+                var summary = "\(tag) <- \(response.statusCode) in \(formatMilliseconds(elapsed))"
+                if let requestID, !requestID.isEmpty {
+                    summary += " (request \(requestID))"
+                }
+                logger.info(summary)
 
                 if (200..<300).contains(response.statusCode) {
+                    logger.debug("\(tag) <- body \(describeBody(data))")
                     return (data, response)
                 }
 
+                logger.debug("\(tag) <- error body \(describeBody(data))")
                 let error = makeAPIError(data: data, response: response)
                 if retriesLeft > 0, policy.httpStatuses.contains(response.statusCode) {
                     try await sleepBeforeRetry(
                         attempt: attempt,
                         retryAfterMS: response.value(forHTTPHeaderField: "retry-after-ms"),
                         retryAfter: response.value(forHTTPHeaderField: "Retry-After"),
-                        policy: policy
+                        policy: policy,
+                        tag: tag,
+                        retriesLeft: retriesLeft,
+                        reason: "\(response.statusCode)"
                     )
                     attempt += 1
                     continue
                 }
                 throw error
             } catch is CancellationError {
+                logger.info("\(tag) aborted by caller after \(formatMilliseconds(started.duration(to: .now)))")
                 throw CancellationError()
-            } catch is TimeoutError where retriesLeft > 0 && policy.retryTimeouts {
-                try await sleepBeforeRetry(attempt: attempt, policy: policy)
-                attempt += 1
-            } catch is ConnectionError where retriesLeft > 0 && policy.retryConnectionErrors {
-                try await sleepBeforeRetry(attempt: attempt, policy: policy)
-                attempt += 1
+            } catch let error as TimeoutError {
+                logger.info("\(tag) timed out after \(formatMilliseconds(started.duration(to: .now)))")
+                if retriesLeft > 0, policy.retryTimeouts {
+                    try await sleepBeforeRetry(
+                        attempt: attempt,
+                        policy: policy,
+                        tag: tag,
+                        retriesLeft: retriesLeft,
+                        reason: error.message
+                    )
+                    attempt += 1
+                    continue
+                }
+                throw error
+            } catch let error as ConnectionError {
+                logger.info("\(tag) connection error after \(formatMilliseconds(started.duration(to: .now)))")
+                if retriesLeft > 0, policy.retryConnectionErrors {
+                    try await sleepBeforeRetry(
+                        attempt: attempt,
+                        policy: policy,
+                        tag: tag,
+                        retriesLeft: retriesLeft,
+                        reason: error.message
+                    )
+                    attempt += 1
+                    continue
+                }
+                throw error
             }
         }
     }
@@ -66,7 +106,8 @@ struct APISession: Sendable {
         body: Data?,
         timeout: Duration,
         options: RequestOptions,
-        retryCount: Int?
+        retryCount: Int?,
+        tag: String
     ) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: url(for: path))
         request.httpMethod = method
@@ -92,6 +133,10 @@ struct APISession: Sendable {
             request.setValue(value, forHTTPHeaderField: name)
         }
 
+        logger.debug(
+            "\(tag) -> \(request.url?.absoluteString ?? "") headers=\(describeHeaders(headers)) body=\(describeBody(body))"
+        )
+
         do {
             return try await transport.send(request)
         } catch {
@@ -103,7 +148,10 @@ struct APISession: Sendable {
         attempt: Int,
         retryAfterMS: String? = nil,
         retryAfter: String? = nil,
-        policy: RetryPolicy
+        policy: RetryPolicy,
+        tag: String,
+        retriesLeft: Int,
+        reason: String
     ) async throws {
         let delay = retryDelay(
             attempt: attempt,
@@ -112,7 +160,15 @@ struct APISession: Sendable {
             policy: policy,
             random: random
         )
-        try await sleep(delay)
+        let nth = attempt + 1
+        let total = attempt + retriesLeft
+        logger.info("\(tag) retrying in \(formatMilliseconds(delay)) (retry \(nth)/\(total)) after \(reason)")
+        do {
+            try await sleep(delay)
+        } catch is CancellationError {
+            logger.info("\(tag) aborted by caller while waiting to retry")
+            throw CancellationError()
+        }
     }
 
     private func url(for path: String) -> URL {
@@ -168,6 +224,47 @@ private func mapTransportError(_ error: Error, timeout: Duration) -> Error {
         message: "Connection error: \(error.localizedDescription)",
         underlying: error
     )
+}
+
+/// Shared across session copies so `systemOne` and `models.list` keep a single sequence.
+private final class RequestCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+        return value
+    }
+}
+
+private func describeHeaders(_ headers: [String: String]) -> String {
+    jsonObjectDescription(redactHeaders(headers))
+}
+
+private func describeBody(_ data: Data?) -> String {
+    guard let data, !data.isEmpty else { return "null" }
+    if let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
+        return jsonObjectDescription(object)
+    }
+    return String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>"
+}
+
+private func jsonObjectDescription(_ object: Any) -> String {
+    guard JSONSerialization.isValidJSONObject(object) || object is String || object is NSNumber || object is NSNull,
+          let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .fragmentsAllowed]),
+          let string = String(data: data, encoding: .utf8)
+    else {
+        return String(describing: object)
+    }
+    return string
+}
+
+private func formatMilliseconds(_ duration: Duration) -> String {
+    let (seconds, attoseconds) = duration.components
+    let milliseconds = seconds * 1000 + attoseconds / 1_000_000_000_000_000
+    return "\(milliseconds)ms"
 }
 
 private func isTimedOut(_ error: Error) -> Bool {

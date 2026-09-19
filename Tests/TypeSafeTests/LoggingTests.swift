@@ -1,20 +1,6 @@
 import Testing
 @testable import TypeSafe
 
-final class RecordingLogger: TypeSafeLogger, @unchecked Sendable {
-    struct Line: Equatable {
-        var level: String
-        var message: String
-    }
-
-    var lines: [Line] = []
-
-    func debug(_ message: String) { lines.append(Line(level: "debug", message: message)) }
-    func info(_ message: String) { lines.append(Line(level: "info", message: message)) }
-    func warn(_ message: String) { lines.append(Line(level: "warn", message: message)) }
-    func error(_ message: String) { lines.append(Line(level: "error", message: message)) }
-}
-
 struct LoggingTests {
     @Test func warnDropsDebugAndInfo() {
         let sink = RecordingLogger()
