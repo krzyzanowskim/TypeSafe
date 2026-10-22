@@ -1,5 +1,5 @@
 import Foundation
-import zlib
+import CZlib
 
 /// Request body compression, sent as `Content-Encoding`.
 public enum RequestCompression: String, Sendable, CaseIterable {

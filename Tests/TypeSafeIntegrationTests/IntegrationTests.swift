@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(ImageIO)
 import ImageIO
+#endif
 import Testing
 import TypeSafe
 
@@ -52,6 +54,7 @@ struct IntegrationTests {
         #expect(result.answers.billing.noul > 0.5)
     }
 
+    #if canImport(ImageIO)
     @Test(.enabled(if: hasAPIKey))
     func boxLocatesRectangleInUploadedImage() async throws {
         let client = try TypeSafeClient(Configuration(defaultHeaders: ["TypeSafe-Danger-Zone-Images": "true"]))
@@ -73,8 +76,10 @@ struct IntegrationTests {
         #expect(abs(box.bottom - 0.75) < 0.1)
         #expect(result.answers.isRed.noul > 0.5)
     }
+    #endif
 }
 
+#if canImport(ImageIO)
 /// A 400 × 400 white PNG with a red square from 100 to 300 pixels on each axis.
 private func redRectanglePNG() throws -> Data {
     let size = 400
@@ -99,3 +104,4 @@ private func redRectanglePNG() throws -> Data {
     #expect(CGImageDestinationFinalize(destination))
     return data as Data
 }
+#endif

@@ -16,13 +16,15 @@ let package = Package(
         .executable(name: "TypeSafeDemo", targets: ["TypeSafeDemo"]),
     ],
     targets: [
-        .target(name: "TypeSafe"),
+        // Linux toolchains have no zlib module, so the package declares its own.
+        .systemLibrary(name: "CZlib", path: "Sources/CZlib"),
+        .target(name: "TypeSafe", dependencies: ["CZlib"]),
         .executableTarget(
             name: "TypeSafeDemo",
             dependencies: ["TypeSafe"],
             path: "Examples/Demo"
         ),
-        .testTarget(name: "TypeSafeTests", dependencies: ["TypeSafe"]),
+        .testTarget(name: "TypeSafeTests", dependencies: ["TypeSafe", "CZlib"]),
         .testTarget(
             name: "TypeSafeIntegrationTests",
             dependencies: ["TypeSafe"]

@@ -8,7 +8,7 @@ Add the package to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/krzyzanowskim/TypeSafe", .upToNextMinor(from: "0.2.0")),
+    .package(url: "https://github.com/krzyzanowskim/TypeSafe", .upToNextMinor(from: "0.2.1")),
 ],
 ```
 
@@ -17,6 +17,8 @@ And link the library product:
 ```swift
 .product(name: "TypeSafe", package: "TypeSafe")
 ```
+
+The package builds for Apple platforms and Linux. On Linux it needs the zlib headers (`zlib1g-dev` on Debian and Ubuntu), which the official Swift Docker images include.
 
 Set `TYPESAFE_API_KEY` in the environment, or pass `apiKey` to `Configuration`.
 
