@@ -58,6 +58,65 @@ struct SystemOneTests {
         #expect(error == .emptyQuestions)
     }
 
+    @Test func nilStateThrowsBeforeNetwork() async throws {
+        let transport = MockTransport { _ in
+            Issue.record("network should not be called")
+            return jsonResponse(status: 200, body: "{}")
+        }
+        let client = try TypeSafeClient(
+            Configuration(apiKey: "k", transport: transport),
+            environment: [:]
+        )
+        struct Q: SystemOneQuestions {
+            var n = Noul("n?")
+            struct Answers: Decodable, Sendable { var n: Noul.Answer }
+        }
+        let error = try await #require(throws: TypeSafeError.self) {
+            try await client.systemOne(state: String?.none, questions: Q())
+        }
+        #expect(error == .missingState)
+    }
+
+    @Test func noulWithoutContentThrowsBeforeNetwork() async throws {
+        let transport = MockTransport { _ in
+            Issue.record("network should not be called")
+            return jsonResponse(status: 200, body: "{}")
+        }
+        let client = try TypeSafeClient(
+            Configuration(apiKey: "k", transport: transport),
+            environment: [:]
+        )
+        struct Q: SystemOneQuestions {
+            var vague = Noul(nil, criteria: Noul.Criteria(yes: .null))
+            struct Answers: Decodable, Sendable { var vague: Noul.Answer }
+        }
+        let error = try await #require(throws: TypeSafeError.self) {
+            try await client.systemOne(state: "x", questions: Q())
+        }
+        #expect(error == .noulWithoutContent("vague"))
+    }
+
+    @Test func noulWithOnlyCriteriaIsSent() async throws {
+        let transport = MockTransport { _ in
+            jsonResponse(
+                status: 200,
+                body: """
+                {"model":"jev-latest","answers":{"n":{"type":"noul","noul":0.1}},"usage":{"input_tokens":1,"output_tokens":1}}
+                """
+            )
+        }
+        let client = try TypeSafeClient(
+            Configuration(apiKey: "k", transport: transport),
+            environment: [:]
+        )
+        struct Q: SystemOneQuestions {
+            var n = Noul(nil, criteria: Noul.Criteria(yes: "The customer was charged twice."))
+            struct Answers: Decodable, Sendable { var n: Noul.Answer }
+        }
+        let result = try await client.systemOne(state: "x", questions: Q())
+        #expect(result.answers.n.noul == 0.1)
+    }
+
     @Test func modelOverrideSent() async throws {
         let saw = Box<String?>(nil)
         let transport = MockTransport { request in

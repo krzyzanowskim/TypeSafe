@@ -35,8 +35,8 @@ public struct Noul: Encodable, Sendable {
         public var noul: Double
     }
 
-    public init(_ instructions: String, yes: JSONValue? = nil, no: JSONValue? = nil) {
-        self.init(.string(instructions), criteria: Criteria(yes: yes, no: no))
+    public init(_ instructions: JSONValue, yes: JSONValue? = nil, no: JSONValue? = nil) {
+        self.init(instructions, criteria: Criteria(yes: yes, no: no))
     }
 
     public init(_ instructions: JSONValue?, criteria: Criteria? = nil) {
@@ -120,10 +120,6 @@ public struct Choice<Label: ChoiceLabel>: Encodable, Sendable {
 }
 
 extension Choice {
-    public init(_ instructions: String, criteria: [Label: JSONValue?] = [:]) throws {
-        try self.init(.string(instructions), criteria: criteria)
-    }
-
     public init(_ instructions: JSONValue?, criteria: [Label: JSONValue?] = [:]) throws {
         guard !criteria.isEmpty else {
             throw TypeSafeError.emptyChoiceCriteria
@@ -134,10 +130,6 @@ extension Choice {
 }
 
 extension Choice where Label: CaseIterable {
-    public init(_ instructions: String, criteria: [Label: JSONValue?] = [:]) {
-        self.init(.string(instructions), criteria: criteria)
-    }
-
     public init(_ instructions: JSONValue?, criteria: [Label: JSONValue?] = [:]) {
         self.instructions = instructions
         if criteria.isEmpty {
@@ -159,12 +151,9 @@ public struct Score: Encodable, Sendable {
         public var probabilities: [String: Double]
     }
 
-    public init(_ instructions: String, levels: [String]) throws {
-        try self.init(.string(instructions), levels: levels.map { .string($0) })
-    }
-
-    public init(_ instructions: String, levels: [JSONValue?]) throws {
-        try self.init(.string(instructions), levels: levels)
+    /// Levels built at runtime, such as a `[String]`, are checked when the question is made.
+    public init(_ instructions: JSONValue?, levels: [String]) throws {
+        try self.init(instructions, levels: levels.map { .string($0) })
     }
 
     public init(_ instructions: JSONValue?, levels: [JSONValue?]) throws {
@@ -184,5 +173,40 @@ public struct Score: Encodable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case type, instructions, criteria
+    }
+}
+
+/// Locates what its instructions describe in the request's image.
+///
+/// Use the `jev-preview` model, and send the `TypeSafe-Danger-Zone-Images: true` header.
+public struct Box: Encodable, Sendable {
+    public var instructions: JSONValue?
+
+    /// A box's edges as fractions of the image's height (`top`, `bottom`) and width (`left`, `right`).
+    public struct Coordinates: Decodable, Sendable, Equatable {
+        public var top: Double
+        public var bottom: Double
+        public var left: Double
+        public var right: Double
+    }
+
+    public struct Answer: Decodable, Sendable, Equatable {
+        public var box: Coordinates
+        /// `nil` when the API doesn't report it.
+        public var confidence: Double?
+    }
+
+    public init(_ instructions: JSONValue? = nil) {
+        self.instructions = instructions
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode("box", forKey: .type)
+        try container.encode(instructions ?? .null, forKey: .instructions)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, instructions
     }
 }

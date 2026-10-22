@@ -65,6 +65,7 @@ struct Demo {
             answers.refundRisk.score,
             "(\(answers.refundRisk.confidence) confidence)"
         )
-        print("tokens      ", result.usage.inputTokens, "in /", result.usage.outputTokens, "out")
+        let tokens = { (count: Int?) in count.map(String.init) ?? "?" }
+        print("tokens      ", tokens(result.usage.inputTokens), "in /", tokens(result.usage.outputTokens), "out")
     }
 }

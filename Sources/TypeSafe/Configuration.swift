@@ -9,6 +9,8 @@ public struct Configuration: Sendable {
     public var retry: RetryOverride?
     public var timeout: Duration?
     public var defaultHeaders: [String: String]
+    /// Request body compression. Default: ``RequestCompression/gzip`` for bodies of 1 KiB or more.
+    public var compression: RequestCompression
     public var transport: (any HTTPTransport)?
 
     public init(
@@ -20,6 +22,7 @@ public struct Configuration: Sendable {
         retry: RetryOverride? = nil,
         timeout: Duration? = nil,
         defaultHeaders: [String: String] = [:],
+        compression: RequestCompression = .gzip,
         transport: (any HTTPTransport)? = nil
     ) {
         self.apiKey = apiKey
@@ -30,6 +33,7 @@ public struct Configuration: Sendable {
         self.retry = retry
         self.timeout = timeout
         self.defaultHeaders = defaultHeaders
+        self.compression = compression
         self.transport = transport
     }
 }

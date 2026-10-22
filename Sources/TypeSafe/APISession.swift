@@ -6,6 +6,7 @@ struct APISession: Sendable {
     let defaultHeaders: [String: String]
     let timeout: Duration
     let retry: RetryPolicy
+    let compression: RequestCompression
     let transport: any HTTPTransport
     let logger: any TypeSafeLogger
     let random: @Sendable () -> Double
@@ -15,7 +16,7 @@ struct APISession: Sendable {
     func request(
         method: String,
         path: String,
-        body: Data?,
+        body: RequestBody?,
         options: RequestOptions
     ) async throws -> (Data, HTTPURLResponse) {
         let policy = try apply(options.retry, to: retry)
@@ -24,13 +25,16 @@ struct APISession: Sendable {
             throw TypeSafeError(message: "timeout must be a positive duration.")
         }
         let tag = "#\(requestCounter.next()) \(method) \(path)"
+        let body = try body?.compressed(compression)
 
         var attempt = 0
         while true {
             let retriesLeft = policy.maxRetries - attempt
             let started = ContinuousClock.now
+            let data: Data
+            let response: HTTPURLResponse
             do {
-                let (data, response) = try await send(
+                (data, response) = try await send(
                     method: method,
                     path: path,
                     body: body,
@@ -39,35 +43,6 @@ struct APISession: Sendable {
                     retryCount: attempt == 0 ? nil : attempt,
                     tag: tag
                 )
-                let elapsed = started.duration(to: .now)
-                let requestID = response.value(forHTTPHeaderField: "x-typesafe-request-id")
-                var summary = "\(tag) <- \(response.statusCode) in \(formatMilliseconds(elapsed))"
-                if let requestID, !requestID.isEmpty {
-                    summary += " (request \(requestID))"
-                }
-                logger.info(summary)
-
-                if (200..<300).contains(response.statusCode) {
-                    logger.debug("\(tag) <- body \(describeBody(data))")
-                    return (data, response)
-                }
-
-                logger.debug("\(tag) <- error body \(describeBody(data))")
-                let error = makeAPIError(data: data, response: response)
-                if retriesLeft > 0, policy.httpStatuses.contains(response.statusCode) {
-                    try await sleepBeforeRetry(
-                        attempt: attempt,
-                        retryAfterMS: response.value(forHTTPHeaderField: "retry-after-ms"),
-                        retryAfter: response.value(forHTTPHeaderField: "Retry-After"),
-                        policy: policy,
-                        tag: tag,
-                        retriesLeft: retriesLeft,
-                        reason: "\(response.statusCode)"
-                    )
-                    attempt += 1
-                    continue
-                }
-                throw error
             } catch is CancellationError {
                 logger.info("\(tag) aborted by caller after \(formatMilliseconds(started.duration(to: .now)))")
                 throw CancellationError()
@@ -100,13 +75,43 @@ struct APISession: Sendable {
                 }
                 throw error
             }
+
+            let elapsed = started.duration(to: .now)
+            let requestID = response.value(forHTTPHeaderField: "x-typesafe-request-id")
+            var summary = "\(tag) <- \(response.statusCode) in \(formatMilliseconds(elapsed))"
+            if let requestID, !requestID.isEmpty {
+                summary += " (request \(requestID))"
+            }
+            logger.info(summary)
+
+            if (200..<300).contains(response.statusCode) {
+                logger.debug("\(tag) <- body \(describeBody(data))")
+                return (data, response)
+            }
+
+            logger.debug("\(tag) <- error body \(describeBody(data))")
+            let error = makeAPIError(data: data, response: response)
+            if retriesLeft > 0, policy.httpStatuses.contains(response.statusCode) {
+                try await sleepBeforeRetry(
+                    attempt: attempt,
+                    retryAfterMS: response.value(forHTTPHeaderField: "retry-after-ms"),
+                    retryAfter: response.value(forHTTPHeaderField: "Retry-After"),
+                    policy: policy,
+                    tag: tag,
+                    retriesLeft: retriesLeft,
+                    reason: "\(response.statusCode)"
+                )
+                attempt += 1
+                continue
+            }
+            throw error
         }
     }
 
     private func send(
         method: String,
         path: String,
-        body: Data?,
+        body: RequestBody?,
         timeout: Duration,
         options: RequestOptions,
         retryCount: Int?,
@@ -114,7 +119,7 @@ struct APISession: Sendable {
     ) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: url(for: path))
         request.httpMethod = method
-        request.httpBody = body
+        request.httpBody = body?.content
         request.timeoutInterval = timeInterval(from: timeout)
 
         let headers = mergeHeaders([
@@ -122,14 +127,14 @@ struct APISession: Sendable {
             options.headers.mapValues { Optional($0) },
             ["X-TypeSafe-Retry-Count": nil],
             defaultSDKHeaders(apiKey: apiKey, retryCount: retryCount).mapValues { Optional($0) },
-            method == "POST" && body != nil ? ["Content-Type": Optional("application/json")] : [:],
+            ["Content-Type": body?.contentType, "Content-Encoding": body?.contentEncoding],
         ])
         for (name, value) in headers {
             request.setValue(value, forHTTPHeaderField: name)
         }
 
         logger.debug(
-            "\(tag) -> \(request.url?.absoluteString ?? "") headers=\(describeHeaders(headers)) body=\(describeBody(body))"
+            "\(tag) -> \(request.url?.absoluteString ?? "") headers=\(describeHeaders(headers)) body=\(describeBody(body?.payload))"
         )
 
         do {

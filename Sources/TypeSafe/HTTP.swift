@@ -25,6 +25,29 @@ func mergeHeaders(_ sources: [[String: String?]]) -> [String: String] {
     return merged
 }
 
+/// A request body, with the JSON request it carries for debug logs.
+struct RequestBody: Sendable {
+    var content: Data
+    var contentType: String
+    var contentEncoding: String?
+    /// The JSON request, logged in place of multipart or compressed content.
+    var payload: Data
+
+    static func json(_ data: Data) -> RequestBody {
+        RequestBody(content: data, contentType: "application/json", payload: data)
+    }
+
+    func compressed(_ compression: RequestCompression) throws -> RequestBody {
+        guard compression == .gzip, contentEncoding == nil, content.count >= compressionThreshold else {
+            return self
+        }
+        var compressed = self
+        compressed.content = try gzip(content)
+        compressed.contentEncoding = "gzip"
+        return compressed
+    }
+}
+
 func defaultSDKHeaders(apiKey: String, retryCount: Int?) -> [String: String] {
     let identity = "typesafe-sdk-swift/\(version)"
     var headers: [String: String] = [

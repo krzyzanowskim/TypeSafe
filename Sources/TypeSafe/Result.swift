@@ -1,6 +1,8 @@
 public struct Usage: Decodable, Sendable, Equatable {
-    public var inputTokens: Int
-    public var outputTokens: Int
+    /// `nil` when the API doesn't report it.
+    public var inputTokens: Int?
+    /// `nil` when the API doesn't report it.
+    public var outputTokens: Int?
 
     enum CodingKeys: String, CodingKey {
         case inputTokens = "input_tokens"

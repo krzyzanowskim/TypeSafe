@@ -47,6 +47,12 @@ struct ResultTests {
         #expect(result.usage.outputTokens == 4)
     }
 
+    @Test func nullTokenCountsDecode() throws {
+        let usage = try decodeJSON(#"{"input_tokens": null, "output_tokens": 4}"#, as: Usage.self)
+        #expect(usage.inputTokens == nil)
+        #expect(usage.outputTokens == 4)
+    }
+
     @Test func unknownChoiceLabelFails() {
         let json = """
         {

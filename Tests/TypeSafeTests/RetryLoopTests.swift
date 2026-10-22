@@ -94,6 +94,51 @@ struct RetryLoopTests {
         #expect(calls.value == 3)
     }
 
+    @Test func cancelWhileWaitingToRetryLogsOnce() async throws {
+        let sink = RecordingLogger()
+        let transport = MockTransport { _ in
+            jsonResponse(status: 503, body: "{\"error\":\"busy\"}")
+        }
+        let client = try TypeSafeClient(
+            Configuration(apiKey: "k", logLevel: .info, logger: sink, transport: transport),
+            environment: [:],
+            sleep: { _ in throw CancellationError() }
+        )
+        struct Q: SystemOneQuestions {
+            var n = Noul("n?")
+            struct Answers: Decodable, Sendable { var n: Noul.Answer }
+        }
+        try await #require(throws: CancellationError.self) {
+            try await client.systemOne(state: "x", questions: Q())
+        }
+        let aborted = sink.lines.filter { $0.message.contains("aborted") }.map(\.message)
+        #expect(aborted.count == 1)
+        #expect(aborted.first?.hasSuffix("aborted by caller while waiting to retry") == true)
+    }
+
+    @Test func userRetryCountHeaderIsDropped() async throws {
+        let count = Box<String?>("unset")
+        let transport = MockTransport { request in
+            count.value = request.value(forHTTPHeaderField: "X-TypeSafe-Retry-Count")
+            return jsonResponse(
+                status: 200,
+                body: """
+                {"model":"jev-latest","answers":{"n":{"type":"noul","noul":0}},"usage":{"input_tokens":0,"output_tokens":0}}
+                """
+            )
+        }
+        let client = try TypeSafeClient(
+            Configuration(apiKey: "k", defaultHeaders: ["x-typesafe-retry-count": "7"], transport: transport),
+            environment: [:]
+        )
+        struct Q: SystemOneQuestions {
+            var n = Noul("n?")
+            struct Answers: Decodable, Sendable { var n: Noul.Answer }
+        }
+        _ = try await client.systemOne(state: "x", questions: Q())
+        #expect(count.value == nil)
+    }
+
     @Test func userCannotOverrideAuthorization() async throws {
         let auth = Box<String?>(nil)
         let transport = MockTransport { request in

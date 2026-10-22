@@ -19,8 +19,8 @@ struct HTTPHeaderTests {
             sdk.mapValues { Optional($0) },
         ])
         #expect(merged["Authorization"] == "Bearer secret")
-        #expect(merged["User-Agent"] == "typesafe-sdk-swift/0.1.0")
-        #expect(merged["X-TypeSafe-SDK"] == "typesafe-sdk-swift/0.1.0")
+        #expect(merged["User-Agent"] == "typesafe-sdk-swift/0.2.0")
+        #expect(merged["X-TypeSafe-SDK"] == "typesafe-sdk-swift/0.2.0")
         #expect(merged.keys.contains { $0.lowercased() == "x-typesafe-retry-count" } == false)
     }
 

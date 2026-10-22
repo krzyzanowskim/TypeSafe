@@ -5,6 +5,10 @@ public enum JSONValue: Sendable, Hashable {
     case object([String: JSONValue])
     case array([JSONValue])
     case null
+    /// An image, written as its reference and uploaded with the request. Never decoded.
+    case image(ImageAsset)
+    /// Text with images interpolated into it. Never decoded.
+    case text(TextWithAssets)
 }
 
 extension JSONValue: Codable {
@@ -45,12 +49,22 @@ extension JSONValue: Codable {
             try container.encode(value)
         case .null:
             try container.encodeNil()
+        case .image(let value):
+            try container.encode(value)
+        case .text(let value):
+            try container.encode(value)
         }
     }
 }
 
-extension JSONValue: ExpressibleByStringLiteral {
+extension JSONValue: ExpressibleByStringInterpolation {
     public init(stringLiteral value: String) { self = .string(value) }
+
+    /// A literal that interpolates images becomes ``text(_:)``; any other literal is a string.
+    public init(stringInterpolation: TextWithAssets.StringInterpolation) {
+        let text = TextWithAssets(stringInterpolation: stringInterpolation)
+        self = text.assets.isEmpty ? .string(text.text) : .text(text)
+    }
 }
 
 extension JSONValue: ExpressibleByIntegerLiteral {

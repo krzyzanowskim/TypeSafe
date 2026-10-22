@@ -12,6 +12,9 @@ public struct TypeSafeError: Error, Sendable, LocalizedError, Equatable {
     public static let missingAPIKey = TypeSafeError(
         message: "No API key was provided. Pass apiKey to Configuration or set the TYPESAFE_API_KEY environment variable."
     )
+    public static let missingState = TypeSafeError(
+        message: "State is required."
+    )
     public static let emptyQuestions = TypeSafeError(
         message: "At least one question is required."
     )
@@ -24,6 +27,31 @@ public struct TypeSafeError: Error, Sendable, LocalizedError, Equatable {
     public static let unexpectedModelsPayload = TypeSafeError(
         message: "Unexpected response shape from GET /v1/models; expected { models: [...] }."
     )
+
+    public static let emptyImage = TypeSafeError(
+        message: "Image data is empty."
+    )
+    public static let invalidImageBase64 = TypeSafeError(
+        message: "Image data must contain valid base64 text."
+    )
+
+    public static func unreferencedAssets(_ names: [String]) -> TypeSafeError {
+        TypeSafeError(
+            message: "Assets not referenced in the request: \(names.joined(separator: ", ")). Write each name in `assets` into `state`, question instructions, or criteria."
+        )
+    }
+
+    public static func unattachedImages(_ references: [String]) -> TypeSafeError {
+        TypeSafeError(
+            message: "Image references without an attached image: \(references.joined(separator: ", ")). Interpolate images into a TextWithAssets or JSONValue, not a String."
+        )
+    }
+
+    public static func noulWithoutContent(_ name: String) -> TypeSafeError {
+        TypeSafeError(
+            message: "Noul question \"\(name)\" has neither instructions nor criteria; at least one is required."
+        )
+    }
 
     public static func invalidLogLevel(_ value: String, source: String) -> TypeSafeError {
         TypeSafeError(
